@@ -20,5 +20,8 @@
   },
   "scripts": {
     "build": "esbuild server.js --bundle --platform=node --outfile=dist/server.bundle.js --format=cjs --external:ssh2 --external:cpu-features --external:buildcheck --external:nan --external:ws"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.2"
   }
 }
