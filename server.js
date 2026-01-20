@@ -6,6 +6,8 @@ const uuid = require('uuid');
 const cors = require('cors');
 const path = require('path');
 const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const validateDeviceBinding = require('./lib/deviceBinding');
 const { loadBoards } = require('./lib/configLoader');
 const { sdrStates, rateLimiterMiddleware, initSDR, executeCommand, pollSDRState, MODE_GPIOS, setSDRBoards } = require('./lib/sdrManager');
@@ -17,6 +19,9 @@ validateDeviceBinding();
 // Load SDR boards
 const SDR_BOARDS = loadBoards();
 setSDRBoards(SDR_BOARDS);
+
+// Relay GPIO pins from Waveshare RPi Relay Board wiki
+const RELAY_GPIOS = [26, 20, 21]; // Relay1:26, Relay2:20, Relay3:21
 
 // Initialize states
 Object.keys(SDR_BOARDS).forEach(id => {
@@ -31,6 +36,9 @@ Object.keys(SDR_BOARDS).forEach(id => {
         tx_on: false
     };
 });
+
+// Initialize relays to off on startup
+updateRelays().catch(err => logger.error(`Startup relay init failed: ${err.message}`));
 
 // Express app
 const app = express();
@@ -70,12 +78,15 @@ app.post('/api/sdrs/:id/init', async (req, res) => {
     }
 });
 
-// Reconnect SDR
+// Reconnect SDR (now with per-port USB cycle)
 app.post('/api/sdrs/:id/reconnect', async (req, res) => {
     const { id } = req.params;
     if (!sdrStates[id]) return res.status(404).json({ error: 'SDR not found' });
 
     try {
+        // Cycle USB port for this SDR
+        await restartUsbPort(id);
+
         if (sdrConnections[id]) sdrConnections[id].end();
         await initSDR(id);
         res.json({ success: true });
@@ -152,7 +163,7 @@ app.post('/api/sdrs/:id/sampling_freq', async (req, res) => {
     }
 });
 
-// Set mode
+// Set mode (updated with relay control)
 app.post('/api/sdrs/:id/set_mode', async (req, res) => {
     const { id } = req.params;
     const { mode } = req.body;
@@ -175,26 +186,23 @@ app.post('/api/sdrs/:id/set_mode', async (req, res) => {
         }
         await pollSDRState(id);
         io.emit('sdrUpdate', { id, state: sdrStates[id] });
+
+        // Update local relays based on new TX state
+        await updateRelays();
+
         res.json({ success: true, state: sdrStates[id] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Restart USB for specific SDR
-app.post('/ap/:id/restart_usb', async (req, res) => {
-    const { id } = req.params;
-    if (!SDR_BOARDS[id]) return res.status(404).json({ error: 'SDR not found' });
-
-    const usbPort = SDR_BOARDS[id].usb_port;
-    if (!usbPort) return res.status(400).json({ error: 'No USB port configured for this SDR' });
-
+// Restart USB hub (global, unchanged)
+app.post('/api/restart_usb', async (req, res) => {
     try {
-        exec(`sudo uhubctl -a cycle -l 1-1 -p ${usbPort}`, (err, stdout, stderr) => {
-            if (err) throw new Error(`uhubctl failed: ${stderr}`);
-            logger.info(`USB restart for SDR ${id} (port ${usbPort}): ${stdout}`);
-            res.json({ success: true, output: stdout });
-        });
+        const { stdout, stderr } = await execPromise('sudo uhubctl -a cycle -l 1-1 -p 1-4');
+        if (stderr) throw new Error(`uhubctl failed: ${stderr}`);
+        logger.info(`USB restart: ${stdout}`);
+        res.json({ success: true, output: stdout });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -214,6 +222,55 @@ io.on('connection', (socket) => {
         logger.info(`Client disconnected: ${socket.id}`);
     });
 });
+
+// Helper: Restart specific USB port for an SDR
+async function restartUsbPort(id) {
+    const port = SDR_BOARDS[id].usb_port;
+    if (!port) {
+        logger.warn(`No usb_port defined for SDR ${id}, skipping USB cycle`);
+        return;
+    }
+    try {
+        const { stdout, stderr } = await execPromise(`sudo uhubctl -a cycle -l 1-1 -p ${port}`);
+        if (stderr) throw new Error(`uhubctl failed for port ${port}: ${stderr}`);
+        logger.info(`USB restart for SDR ${id} on port ${port}: ${stdout}`);
+    } catch (err) {
+        logger.error(`USB restart failed for SDR ${id}: ${err.message}`);
+        throw err; // Re-throw to handle in caller
+    }
+}
+
+// Helper: Set a single relay
+async function setRelay(relayIndex, state) {
+    const gpio = RELAY_GPIOS[relayIndex];
+    try {
+        const { stderr } = await execPromise(`gpioset gpiochip0 ${gpio}=${state ? 1 : 0}`);
+        if (stderr) throw new Error(stderr);
+    } catch (err) {
+        throw new Error(`Failed to set relay ${relayIndex + 1} (GPIO ${gpio}) to ${state}: ${err.message}`);
+    }
+}
+
+// Helper: Update all relays based on active SDRs (OR the relay states)
+async function updateRelays() {
+    const required = Array(3).fill(0);
+    Object.entries(sdrStates).forEach(([id, state]) => {
+        if (state.tx_on && SDR_BOARDS[id]?.relays && SDR_BOARDS[id].relays.length === 3) {
+            SDR_BOARDS[id].relays.forEach((val, idx) => {
+                if (val === 1) required[idx] = 1;
+            });
+        }
+    });
+
+    for (let i = 0; i < 3; i++) {
+        try {
+            await setRelay(i, required[i]);
+            logger.info(`Set relay ${i + 1} to ${required[i]}`);
+        } catch (err) {
+            logger.error(err.message);
+        }
+    }
+}
 
 // Start server
 const PORT = process.env.PORT || 3000;
