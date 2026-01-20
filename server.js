@@ -8,6 +8,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const Gpio = require('onoff').Gpio; // For relay GPIO control
 const validateDeviceBinding = require('./lib/deviceBinding');
 const { loadBoards } = require('./lib/configLoader');
 const { sdrStates, rateLimiterMiddleware, initSDR, executeCommand, pollSDRState, MODE_GPIOS, setSDRBoards } = require('./lib/sdrManager');
@@ -22,6 +23,14 @@ setSDRBoards(SDR_BOARDS);
 
 // Relay GPIO pins from Waveshare RPi Relay Board wiki
 const RELAY_GPIOS = [26, 20, 21]; // Relay1:26, Relay2:20, Relay3:21
+
+let relayGpios = [];
+if (Gpio.accessible) {
+    relayGpios = RELAY_GPIOS.map(gpio => new Gpio(gpio, 'out', { activeLow: false })); // 'out' mode, initial low (off)
+    logger.info('GPIO accessible, relays initialized');
+} else {
+    logger.warn('GPIO not accessible (not on Raspberry Pi or no permissions?); relay control disabled');
+}
 
 // Initialize states
 Object.keys(SDR_BOARDS).forEach(id => {
@@ -240,14 +249,14 @@ async function restartUsbPort(id) {
     }
 }
 
-// Helper: Set a single relay
-async function setRelay(relayIndex, state) {
-    const gpio = RELAY_GPIOS[relayIndex];
+// Helper: Set a single relay using onoff
+function setRelay(relayIndex, state) {
+    if (!Gpio.accessible) return; // Skip if not accessible
+    const gpio = relayGpios[relayIndex];
     try {
-        const { stderr } = await execPromise(`gpioset gpiochip0 ${gpio}=${state ? 1 : 0}`);
-        if (stderr) throw new Error(stderr);
+        gpio.writeSync(state ? 1 : 0);
     } catch (err) {
-        throw new Error(`Failed to set relay ${relayIndex + 1} (GPIO ${gpio}) to ${state}: ${err.message}`);
+        throw new Error(`Failed to set relay ${relayIndex + 1} (GPIO ${RELAY_GPIOS[relayIndex]}) to ${state}: ${err.message}`);
     }
 }
 
@@ -264,13 +273,21 @@ async function updateRelays() {
 
     for (let i = 0; i < 3; i++) {
         try {
-            await setRelay(i, required[i]);
+            setRelay(i, required[i]);
             logger.info(`Set relay ${i + 1} to ${required[i]}`);
         } catch (err) {
             logger.error(err.message);
         }
     }
 }
+
+// Cleanup on exit
+process.on('SIGINT', () => {
+    if (Gpio.accessible) {
+        relayGpios.forEach(gpio => gpio.unexport());
+    }
+    process.exit();
+});
 
 // Start server
 const PORT = process.env.PORT || 3000;
