@@ -6,7 +6,8 @@
   "pkg": {
     "assets": [
       "build/**/*",
-      "boards.json"
+      "boards.json",
+      "config.json"
     ]
   },
   "dependencies": {
@@ -19,7 +20,9 @@
     "cors": "^2.8.5"
   },
   "scripts": {
-    "build": "esbuild server.js --bundle --platform=node --outfile=dist/server.bundle.js --format=cjs --external:ssh2 --external:cpu-features --external:buildcheck --external:nan --external:ws"
+    "build": "esbuild server.js --bundle --platform=node --outfile=dist/server.bundle.js --format=cjs --external:ssh2 --external:cpu-features --external:buildcheck --external:nan --external:ws",
+    "package": "pkg . --targets node20-linux-arm64 --output sdr-server --public --public-packages \"*\" --no-bytecode --debug",
+    "build-all": "npm run build && npm run package"
   },
   "devDependencies": {
     "esbuild": "^0.27.2"

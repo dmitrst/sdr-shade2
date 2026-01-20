@@ -1,22 +1,8 @@
 [
   {
     "id": "sdr1",
-    "ip": "192.168.10.1",
-    "name": "SDR Board 1"
-  },
-  {
-    "id": "sdr2",
-    "ip": "192.168.20.1",
-    "name": "SDR Board 2"
-  },
-  {
-    "id": "sdr3",
-    "ip": "192.168.30.1",
-    "name": "SDR Board 3"
-  },
-  {
-    "id": "sdr4",
-    "ip": "192.168.40.1",
-    "name": "SDR Board 4"
+    "ip": "192.168.50.1",
+    "name": "SDR Board 1",
+    "usb_port": 1
   }
 ]
