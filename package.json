@@ -17,8 +17,7 @@
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "rate-limiter-flexible": "^5.0.0",
-    "cors": "^2.8.5",
-    "onoff": "^6.0.3"
+    "cors": "^2.8.5"
   },
   "scripts": {
     "build": "esbuild server.js --bundle --platform=node --outfile=dist/server.bundle.js --format=cjs --external:ssh2 --external:cpu-features --external:buildcheck --external:nan --external:ws",
