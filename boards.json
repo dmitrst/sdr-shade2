@@ -1,5 +1,13 @@
 [
   {
+    "name" : "LPDA 1",
+    "freq_start": 300,
+    "freq_stop": 700,
+    "sdrs": [
+
+    ]
+  },
+  {
     "id": "sdr1",
     "ip": "192.168.50.1",
     "name": "SDR Board 1",
