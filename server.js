@@ -208,6 +208,22 @@ app.post('/api/restart_usb', async (req, res) => {
     }
 });
 
+app.post('/api/sdrs/:id/restart_usb', async (req, res) => {
+    const { id } = req.params;
+    if (!sdrStates[id]) return res.status(404).json({ error: 'SDR not found' });
+    try {
+        // Customize uhubctl per SDR (e.g., map ID to specific port; example assumes port based on ID)
+        const port = parseInt(id.replace('sdr', '')); // e.g., sdr1 -> port 1
+        exec(`sudo uhubctl -a cycle -l 1-1 -p ${port}`, (err, stdout, stderr) => {
+            if (err) throw new Error(`uhubctl failed: ${stderr}`);
+            logger.info(`USB restart for ${id}: ${stdout}`);
+            res.json({ success: true, output: stdout });
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Handle SPA routing
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'build', 'index.html'));
