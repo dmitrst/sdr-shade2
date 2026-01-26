@@ -134,7 +134,7 @@ function App() {
   };
   const handleRestartAllUsb = async () => {
     try {
-      await axios.post(`${API_BASE_URL}/api/restart_usb`);
+      await axios.post(`${API_BASE_URL}/restart_usb`);
       setError(null);
       alert('USB power cycle initiated for all SDRs. Reconnecting...');
     } catch (err) {
