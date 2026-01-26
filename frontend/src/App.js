@@ -132,6 +132,15 @@ function App() {
       setSdrLoading(id, 'reconnect', false);
     }
   };
+  const handleRestartAllUsb = async () => {
+    try {
+      await axios.post(`${API_BASE_URL}/api/restart_usb`);
+      setError(null);
+      alert('USB power cycle initiated for all SDRs. Reconnecting...');
+    } catch (err) {
+      setError('USB restart failed: ' + err.message);
+    }
+  };
 
   const handleRestartUsb = async (id) => {
     setSdrLoading(id, 'usb_restart', true);
@@ -204,7 +213,9 @@ function App() {
   return (
       <Container className="mt-4">
         {error && <Alert variant="danger">{error}</Alert>}
-
+        <Button variant="danger" onClick={handleRestartAllUsb} className="mb-4">
+          Restart All USB (Power Cycle SDRs)
+        </Button>
         <Row>
           {sdrs.map(sdr => (
               <Col md={3} key={sdr.id} className="mb-4">
